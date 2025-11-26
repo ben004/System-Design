@@ -1,0 +1,122 @@
+{
+  "index": "products",
+  "mappings": {
+    "properties": {
+      "canonical_id": { "type": "keyword" },
+      "title": {
+        "type": "text",
+        "analyzer": "standard",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "ngram": { "type": "text", "analyzer": "ngram_analyzer" }
+        }
+      },
+      "brand": { "type": "keyword" },
+      "model": { "type": "keyword" },
+      "category_path": { "type": "keyword" },
+      "attributes": {
+        "type": "nested",
+        "properties": {
+          "name": { "type": "keyword" },
+          "value": { "type": "text" }
+        }
+      },
+      "popularity": { "type": "long" },
+      "images": { "type": "keyword" },
+      "platforms": {
+        "type": "nested",
+        "properties": {
+          "platform": { "type": "keyword" },
+          "platform_listing_id": { "type": "keyword" },
+          "price": { "type": "double" },
+          "currency": { "type": "keyword" },
+          "availability": { "type": "boolean" },
+          "rating": { "type": "double" },
+          "last_seen_at": { "type": "date" },
+          "url": { "type": "keyword" }
+        }
+      },
+      "suggest": {
+        "type": "completion"
+      }
+    }
+  },
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "ngram_analyzer": {
+          "tokenizer": "ngram_tokenizer",
+          "filter": [ "lowercase" ]
+        }
+      },
+      "tokenizer": {
+        "ngram_tokenizer": {
+          "type": "ngram",
+          "min_gram": 3,
+          "max_gram": 20,
+          "token_chars": [ "letter", "digit" ]
+        }
+      }
+    }
+  }
+}
+
+
+-- Sample search query (Query DSL): Find "iphone 12" cheapest on market, filter by availability and brand, return top 20 sorted by lowest price
+
+{
+  "size": 20,
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "multi_match": {
+            "query": "iphone 12",
+            "fields": [ "title^3", "title.ngram^2", "attributes.value", "brand^2" ],
+            "type": "best_fields",
+            "fuzziness": "AUTO"
+          }
+        }
+      ],
+      "filter": [
+        { "term": { "brand": "Apple" } },
+        { "nested": {
+            "path": "platforms",
+            "query": { "term": { "platforms.availability": true } }
+          }
+        }
+      ]
+    }
+  },
+  "sort": [
+    { "platforms.price": { "order": "asc", "mode": "min", "nested": { "path": "platforms" } } },
+    { "popularity": { "order": "desc" } }
+  ],
+  "_source": [ "canonical_id", "title", "brand", "images", "platforms.price", "platforms.platform", "platforms.url" ],
+  "aggs": {
+    "price_stats": {
+      "nested": { "path": "platforms" },
+      "aggs": {
+        "by_platform": {
+          "terms": { "field": "platforms.platform" },
+          "aggs": { "avg_price": { "avg": { "field": "platforms.price" } } }
+        }
+      }
+    },
+    "brands": { "terms": { "field": "brand" } }
+  }
+}
+
+
+-- Suggest (autocomplete) sample
+{
+  "suggest": {
+    "product-suggest": {
+      "prefix": "iph",
+      "completion": {
+        "field": "suggest",
+        "size": 10
+      }
+    }
+  }
+}
